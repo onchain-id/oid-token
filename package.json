@@ -4,6 +4,8 @@
   "description": "Governance ERC20 token of the ONCHAINID Protocol",
   "main": "index.js",
   "scripts": {
+    "lint": "npm run lint:sol",
+    "lint:sol": "solhint \"contracts/**/*.sol\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -37,6 +39,7 @@
     "solidity-coverage": "^0.7.17",
     "solidity-docgen": "^0.5.16",
     "truffle": "^5.4.16",
+    "truffle-flattener": "^1.5.0",
     "web3": "^1.6.0"
   },
   "husky": {
