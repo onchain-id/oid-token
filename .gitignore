@@ -8,6 +8,7 @@ bin
 # IDEs
 .idea/
 .vscode/
+.DS_Store
 
 # NPM
 gas-report
