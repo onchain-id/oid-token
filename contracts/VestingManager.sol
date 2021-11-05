@@ -45,6 +45,15 @@ contract VestingManager is Ownable {
     /* Admin functions */
 
     /**
+     * @dev Initializes the OID token address
+     * @param _oidAddress Address of the OID token
+     */
+    function setTokenAddress(address _oidAddress) external onlyOwner {
+        require(_oidAddress != address(0), 'Token address cannot be the null address');
+        oidToken = ERC20(_oidAddress);
+    }
+
+    /**
      * @dev Default withdraw function in case someone deposits ETH erroneously.
      */
     function withdraw() external onlyOwner {
@@ -112,23 +121,18 @@ contract VestingManager is Ownable {
     }
 
     /**
-     * @dev Withdraws remaining unlocked tokens accross offerings.
+     * @dev Withdraws remaining unlocked tokens from message sender.
      */
     function claim() external referenceInitiated {
-        Holding[] storage userHoldings = Holdings[msg.sender];
-        uint256 availableBalance = 0;
-        for (uint256 i = 0; i < userHoldings.length; i++) {
-            uint256 unlockedBalance = _getAvailableBalance(userHoldings[i]);
-            if (unlockedBalance > 0) {
-                userHoldings[i].releasedAmount = unlockedBalance;
-                availableBalance += unlockedBalance;
-            }
-        }
-        require(availableBalance > 0, 'There are no tokens available for withdraw');
-        bool success = oidToken.transferFrom(address(this), msg.sender, availableBalance);
-        require(success, 'Token transfer failed!');
+        return _claim(msg.sender);
+    }
 
-        emit Withdraw(msg.sender, availableBalance);
+    /**
+     * @dev Withdraws remaining unlocked tokens from address.
+     * @param _from the users address
+     */
+    function claimFromToken(address _from) external referenceInitiated {
+        return _claim(_from);
     }
 
     /**
@@ -137,7 +141,7 @@ contract VestingManager is Ownable {
      * @return totalLocked remaining user's locked tokens
      * @return availableAmount amount of freely available tokens
      */
-    function getUserBalance(address _user) public view returns (uint256 totalLocked, uint256 availableAmount) {
+    function getUserBalance(address _user) external view returns (uint256 totalLocked, uint256 availableAmount) {
         Holding[] memory userHoldings = Holdings[_user];
         if (userHoldings.length == 0) {
             return (0, 0);
@@ -157,6 +161,27 @@ contract VestingManager is Ownable {
     }
 
     /* Internal functions */
+    /**
+     * @dev Internal function to withdraw remaining unlocked tokens from address.
+     * @param _from the users address
+     */
+
+    function _claim(address _from) private {
+        Holding[] storage userHoldings = Holdings[_from];
+        uint256 availableBalance = 0;
+        for (uint256 i = 0; i < userHoldings.length; i++) {
+            uint256 unlockedBalance = _getAvailableBalance(userHoldings[i]);
+            if (unlockedBalance > 0) {
+                userHoldings[i].releasedAmount = unlockedBalance;
+                availableBalance += unlockedBalance;
+            }
+        }
+        require(availableBalance > 0, 'There are no tokens available for withdraw');
+        bool success = oidToken.transferFrom(address(this), _from, availableBalance);
+        require(success, 'Token transfer failed!');
+
+        emit Withdraw(_from, availableBalance);
+    }
 
     /**
      * @dev Calculates free token balance from each user holding.

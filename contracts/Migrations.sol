@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import '@openzeppelin/contracts/access/Ownable.sol';
+contract Migrations {
+    address public owner = msg.sender;
 
-contract Migrations is Ownable{
-  uint256 public lastCompletedMigration;
+    // A function with the signature `last_completed_migration()`, returning a uint, is required.
+    uint256 public last_completed_migration;
 
-  constructor(){}
+    modifier restricted() {
+        require(msg.sender == owner, 'This function is restricted to the contracts owner');
+        _;
+    }
 
-  function setCompleted(uint256 completed) external onlyOwner {
-    lastCompletedMigration = completed;
-  }
+    // A function with the signature `setCompleted(uint)` is required.
+    function setCompleted(uint256 completed) public restricted {
+        last_completed_migration = completed;
+    }
 }
