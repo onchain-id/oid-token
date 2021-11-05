@@ -38,9 +38,12 @@ contract VestingManager is Ownable {
         _;
     }
 
-    constructor(address _oidAddress) {
-        oidToken = ERC20(_oidAddress);
+    modifier oidTokenInitiated() {
+        require(address(oidToken) != address(0), 'OID token not initialized');
+        _;
     }
+
+    constructor() {}
 
     /* Admin functions */
 
@@ -50,6 +53,7 @@ contract VestingManager is Ownable {
      */
     function setTokenAddress(address _oidAddress) external onlyOwner {
         require(_oidAddress != address(0), 'Token address cannot be the null address');
+        require(address(oidToken) == address(0), 'Token address already set');
         oidToken = ERC20(_oidAddress);
     }
 
@@ -101,7 +105,7 @@ contract VestingManager is Ownable {
         address _to,
         uint256 _amount,
         uint8 _schemaId
-    ) external {
+    ) external oidTokenInitiated {
         // Validate input parameters
         require(_to != address(0), 'Cannot deposit to address 0');
         require(_amount > 0, 'Value must be positive');
@@ -166,7 +170,7 @@ contract VestingManager is Ownable {
      * @param _from the users address
      */
 
-    function _claim(address _from) private {
+    function _claim(address _from) private oidTokenInitiated {
         Holding[] storage userHoldings = Holdings[_from];
         uint256 availableBalance = 0;
         for (uint256 i = 0; i < userHoldings.length; i++) {
