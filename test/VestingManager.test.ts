@@ -1,4 +1,5 @@
-import { expect } from 'chai';
+import chai, { expect } from 'chai';
+import { solidity } from 'ethereum-waffle';
 import { artifacts, ethers, waffle } from 'hardhat';
 import { Artifact } from 'hardhat/types';
 
@@ -6,6 +7,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 
 import { VestingManager } from '../types/VestingManager';
 import { Signers } from './types';
+
+chai.use(solidity);
 
 describe('Unit tests', function () {
   before(async function () {
@@ -28,9 +31,9 @@ describe('Unit tests', function () {
     //Admin functions
     describe('Admin functions', function () {
       describe('setTokenAddress', function () {
-        it.only('should revert if an address not the owner attempts to set oidAddress', async function () {
-          return expect(
-            await this.vestingManager.connect(this.signers.user).setTokenAddress('0xc7d5639eccfbe65ea3adde99fbe163389e8395fa'),
+        it('should revert if an address not the owner attempts to set oidAddress', async function () {
+          return await expect(
+            this.vestingManager.connect(this.signers.user).setTokenAddress('0xc7d5639eccfbe65ea3adde99fbe163389e8395fa'),
           ).to.be.revertedWith('Ownable: caller is not the owner');
         });
         context('if msg.sender is the contract owner', function () {
