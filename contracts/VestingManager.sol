@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
 
-// import './OnchainId';
+import 'hardhat/console.sol';
 
 contract VestingManager is Ownable {
     ERC20 public oidToken;
@@ -48,6 +48,16 @@ contract VestingManager is Ownable {
     /* Admin functions */
 
     /**
+     * @dev Sets the reference date for all lockups in the contract.
+     * @param _referenceDate period in quarters that tokens remain blocked
+     */
+    function setReferenceDate(uint256 _referenceDate) external onlyOwner {
+        require(referenceDate == 0, 'Reference date has already been initialized');
+        require(_referenceDate == 0, 'Cannot set reference date to 0');
+        referenceDate = _referenceDate;
+    }
+
+    /**
      * @dev Initializes the OID token address
      * @param _oidAddress Address of the OID token
      */
@@ -63,16 +73,6 @@ contract VestingManager is Ownable {
     function withdraw() external onlyOwner {
         (bool success, ) = payable(msg.sender).call{value: address(this).balance}('');
         require(success, 'Transaction error');
-    }
-
-    /**
-     * @dev Sets the reference date for all lockups in the contract.
-     * @param _referenceDate period in quarters that tokens remain blocked
-     */
-    function initiateReferenceDate(uint256 _referenceDate) external onlyOwner {
-        require(referenceDate == 0, 'Reference date has already been initialized');
-        require(_referenceDate > 0, 'Cannot set reference date to 0');
-        referenceDate = _referenceDate;
     }
 
     /**
@@ -125,18 +125,26 @@ contract VestingManager is Ownable {
     }
 
     /**
-     * @dev Withdraws remaining unlocked tokens from message sender.
-     */
-    function claim() external referenceInitiated {
-        return _claim(msg.sender);
-    }
-
-    /**
      * @dev Withdraws remaining unlocked tokens from address.
      * @param _from the users address
      */
-    function claimFromToken(address _from) external referenceInitiated {
-        return _claim(_from);
+    function claim(address _from) external referenceInitiated oidTokenInitiated {
+        Holding[] storage userHoldings = Holdings[_from];
+        require(userHoldings.length > 0, 'User does not have any holdings');
+
+        uint256 availableBalance = 0;
+        for (uint256 i = 0; i < userHoldings.length; i++) {
+            uint256 unlockedBalance = _getAvailableBalance(userHoldings[i]);
+            if (unlockedBalance > 0) {
+                userHoldings[i].releasedAmount = unlockedBalance;
+                availableBalance += unlockedBalance;
+            }
+        }
+        require(availableBalance > 0, 'There are no tokens available for withdraw');
+        bool success = oidToken.transferFrom(address(this), _from, availableBalance);
+        require(success, 'Token transfer failed!');
+
+        emit Withdraw(_from, availableBalance);
     }
 
     /**
@@ -146,6 +154,7 @@ contract VestingManager is Ownable {
      * @return availableAmount amount of freely available tokens
      */
     function getUserBalance(address _user) external view returns (uint256 totalLocked, uint256 availableAmount) {
+        require(_user != address(0), 'Cannot get balance for address 0');
         Holding[] memory userHoldings = Holdings[_user];
         if (userHoldings.length == 0) {
             return (0, 0);
@@ -165,27 +174,6 @@ contract VestingManager is Ownable {
     }
 
     /* Internal functions */
-    /**
-     * @dev Internal function to withdraw remaining unlocked tokens from address.
-     * @param _from the users address
-     */
-
-    function _claim(address _from) private oidTokenInitiated {
-        Holding[] storage userHoldings = Holdings[_from];
-        uint256 availableBalance = 0;
-        for (uint256 i = 0; i < userHoldings.length; i++) {
-            uint256 unlockedBalance = _getAvailableBalance(userHoldings[i]);
-            if (unlockedBalance > 0) {
-                userHoldings[i].releasedAmount = unlockedBalance;
-                availableBalance += unlockedBalance;
-            }
-        }
-        require(availableBalance > 0, 'There are no tokens available for withdraw');
-        bool success = oidToken.transferFrom(address(this), _from, availableBalance);
-        require(success, 'Token transfer failed!');
-
-        emit Withdraw(_from, availableBalance);
-    }
 
     /**
      * @dev Calculates free token balance from each user holding.

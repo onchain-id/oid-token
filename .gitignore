@@ -4,6 +4,10 @@ coverageEnv
 coverage.json
 build
 bin
+types
+cache
+artifacts
+.env
 
 # IDEs
 .idea/
