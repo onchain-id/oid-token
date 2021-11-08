@@ -85,7 +85,7 @@ contract VestingManager is Ownable {
         // Validate that we are not overflowing uint8
         uint8 newSchemaId = schemaId;
         schemaId++;
-        require(newSchemaId > schemaId, 'Schema ID overflow');
+        require(newSchemaId < schemaId, 'Schema ID overflow');
         require(_vesting > 0 && _vesting <= 100, 'Vesting % should be withing 0 and 100');
         // Store new schema and emit event
         VestingSchemas[newSchemaId] = VestingSchema(_lockup, _vesting);
@@ -115,7 +115,7 @@ contract VestingManager is Ownable {
         require(schema.vesting != 0, 'Vesting schema does not exist');
 
         // Validate that spender is allowed to operate with OID token
-        require(oidToken.allowance(msg.sender, _to) >= _amount, 'Not enough allowance');
+        require(oidToken.allowance(msg.sender, address(this)) >= _amount, 'Not enough allowance');
         // Transfer OID token to locker contract
         bool success = oidToken.transferFrom(msg.sender, address(this), _amount);
         require(success, 'Token transfer failed!');
