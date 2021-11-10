@@ -95,7 +95,7 @@ describe('Unit tests', () => {
               'Cannot deposit to address 0',
             );
           });
-          it('should revert if _amountis 0', async () => {
+          it('should revert if _amounts 0', async () => {
             const userAddr = signers.user.address;
             return await expect(vestingManager.connect(signers.user).deposit(userAddr, 0, 0)).to.be.revertedWith('Value must be positive');
           });
