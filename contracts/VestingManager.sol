@@ -190,6 +190,10 @@ contract VestingManager is Ownable {
             //All tokens released
             return 0;
         }
+        if (referenceDate == 0) {
+            return 0;
+        }
+
         uint256 currentTime = block.timestamp;
         VestingSchema memory schema = VestingSchemas[_holding.vestingSchema];
 

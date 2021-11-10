@@ -215,17 +215,40 @@ describe('Unit tests', () => {
 
         beforeEach('initialize oitToken addr', async () => {
           await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
+          await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.constants.MaxUint256);
         });
         it('should revert it fetching balance for address 0', async () => {
           return await expect(vestingManager.connect(signers.user).getUserBalance(ethers.constants.AddressZero)).to.be.revertedWith(
             'Cannot get balance for address 0',
           );
         });
+        it('should return (10,0) if referenceDate has not been set', async () => {
+          const vestingAdmin = vestingManager.connect(signers.admin);
+
+          await vestingAdmin.createVestingSchema(3, 5000);
+          await vestingAdmin.deposit(signers.user.address, amount, 0);
+
+          const result = await vestingManager.connect(signers.user).getUserBalance(signers.user.address);
+          expect(result.totalLocked).to.equal(ethers.utils.parseUnits('10', decimals));
+          return expect(result.availableBalance).to.equal(ethers.utils.parseUnits('0', decimals));
+        });
+        it('should return (10,0) if vesting has not started yet', async () => {
+          const vestingAdmin = vestingManager.connect(signers.admin);
+
+          const currentBlock = await ethers.provider.getBlock('latest');
+          await vestingAdmin.setReferenceDate(currentBlock.timestamp);
+          await vestingAdmin.createVestingSchema(3, 5000);
+          await vestingAdmin.deposit(signers.user.address, amount, 0);
+
+          const result = await vestingManager.connect(signers.user).getUserBalance(signers.user.address);
+          expect(result.totalLocked).to.equal(ethers.utils.parseUnits('10', decimals));
+          return expect(result.availableBalance).to.equal(ethers.utils.parseUnits('0', decimals));
+        });
         it('should return (0,0) if user has no holdings', async () => {
           const userAddr = signers.user.address;
           const [totalLocked, availableBalance] = await vestingManager.connect(signers.user).getUserBalance(userAddr);
           expect(ethers.BigNumber.from(totalLocked).toNumber()).to.be.equal(0);
-          expect(ethers.BigNumber.from(availableBalance).toNumber()).to.be.equal(0);
+          return expect(ethers.BigNumber.from(availableBalance).toNumber()).to.be.equal(0);
         });
         it('should return totalLockedAmount and availableAmount from _user', async () => {
           const vestingAdmin = vestingManager.connect(signers.admin);
@@ -236,7 +259,6 @@ describe('Unit tests', () => {
           await vestingAdmin.createVestingSchema(0, 5000); // 50.00%
           await vestingManager.createVestingSchema(0, 1000); // 10.00%
 
-          await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
           await vestingAdmin.deposit(signers.user.address, amount, 0);
           await vestingAdmin.deposit(signers.user.address, amount, 1);
 
@@ -247,12 +269,17 @@ describe('Unit tests', () => {
           await network.provider.send('evm_setNextBlockTimestamp', [dateValueInSeconds]);
           await network.provider.send('evm_mine');
 
+          const vestingUser = vestingManager.connect(signers.user);
+          let userBalance = await vestingUser.getUserBalance(signers.user.address);
+          expect(userBalance.totalLocked).to.be.equal(ethers.utils.parseUnits('14', decimals));
+          expect(userBalance.availableBalance).to.be.equal(ethers.utils.parseUnits('6', decimals));
+
           // Should be able to claim part of the tokens
-          await expect(vestingManager.connect(signers.user).claim(signers.user.address))
+          await expect(vestingUser.claim(signers.user.address))
             .to.emit(vestingManager, 'Withdraw')
             .withArgs(signers.user.address, ethers.utils.parseUnits('6', decimals));
 
-          const userBalance = await vestingManager.connect(signers.user).getUserBalance(signers.user.address);
+          userBalance = await vestingUser.getUserBalance(signers.user.address);
           expect(userBalance.totalLocked).to.be.equal(ethers.utils.parseUnits('14', decimals));
           return expect(userBalance.availableBalance).to.be.equal(ethers.utils.parseUnits('0', decimals));
         });
