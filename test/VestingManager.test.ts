@@ -95,7 +95,7 @@ describe('Unit tests', () => {
               'Cannot deposit to address 0',
             );
           });
-          it('should revert if _amount is 0', async () => {
+          it('should revert if _amountis 0', async () => {
             const userAddr = signers.user.address;
             return await expect(vestingManager.connect(signers.user).deposit(userAddr, 0, 0)).to.be.revertedWith('Value must be positive');
           });
@@ -138,14 +138,77 @@ describe('Unit tests', () => {
         });
       });
       describe('claim', () => {
-        it('should revert if referenceDate is not initialized', async () => {});
-        it('should revert if oidToken is not initialized', async () => {});
-        it('should revert if user does not have any holding', async () => {});
-        it('should revert if there is no available balance', async () => {});
-        it('should revert if transferFrom fails', async () => {});
-        it('should transfer available tokens and emit an event', async () => {});
-        it('should not allow to claim indefinitely', async () => {});
-        it('should unlock tokens every quarter', async () => {});
+        beforeEach('setup contract', async () => {
+          await vestingManager.connect(signers.admin).createVestingSchema(0, 5000);
+        });
+
+        it('should revert if referenceDate is not initialized', async () => {
+          return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith('Reference date not initialized');
+        });
+        context('when referenceDate is initialized', function () {
+          beforeEach('initialize referenceDate', async () => {
+            const referenceDate = Math.floor(new Date().valueOf() / 1000);
+            await vestingManager.connect(signers.admin).setReferenceDate(referenceDate);
+          });
+
+          it('should revert if oidToken is not initialized', async () => {
+            return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith('OID token not initialized');
+          });
+          context('when oidToken addr is initialized', async () => {
+            beforeEach('initialize oidToken addr', async () => {
+              await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
+              await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
+            });
+            it('should revert if user does not have any holding', async () => {
+              return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith(
+                'User does not have any holding',
+              );
+            });
+            it('should revert if there is no available balance', async () => {
+              // Add holding to user
+              await vestingManager.connect(signers.admin).deposit(signers.user.address, ethers.utils.parseUnits('10', decimals), 0);
+              return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith(
+                'There are no tokens available to claim',
+              );
+            });
+            it('should transfer available tokens and emit an event', async () => {
+              const userInstance = vestingManager.connect(signers.user);
+              await vestingManager.connect(signers.admin).deposit(signers.user.address, ethers.utils.parseUnits('10', decimals), 0);
+
+              // Back to the future
+              const date = new Date();
+              date.setDate(date.getDate() + 92); //Set time to next quarter
+              let dateValueInSeconds = Math.floor(date.valueOf() / 1000);
+
+              await network.provider.send('evm_setNextBlockTimestamp', [dateValueInSeconds]);
+              await network.provider.send('evm_mine');
+
+              // Should be able to claim part of the tokens
+              await expect(userInstance.claim(signers.user.address))
+                .to.emit(vestingManager, 'Withdraw')
+                .withArgs(signers.user.address, ethers.utils.parseUnits('5', decimals));
+
+              await expect(userInstance.claim(signers.user.address)).to.be.revertedWith('There are no tokens available to claim');
+
+              // Unlock rest of tokens and claim them
+              date.setDate(date.getDate() + 92); //Set time to next quarter
+              dateValueInSeconds = Math.floor(date.valueOf() / 1000);
+
+              await network.provider.send('evm_setNextBlockTimestamp', [dateValueInSeconds]);
+              await network.provider.send('evm_mine');
+              await expect(userInstance.claim(signers.user.address))
+                .to.emit(vestingManager, 'Withdraw')
+                .withArgs(signers.user.address, ethers.utils.parseUnits('5', decimals));
+
+              // Should not be able to claim anymore and balance locked should be 0
+              await expect(userInstance.claim(signers.user.address)).to.be.revertedWith('There are no tokens available to claim');
+
+              const userBalance = await userInstance.getUserBalance(signers.user.address);
+              expect(userBalance.totalLocked).to.equal(ethers.utils.parseUnits('0', decimals));
+              return expect(userBalance.availableBalance).to.equal(ethers.utils.parseUnits('0', decimals));
+            });
+          });
+        });
       });
       describe('getUserBalance', () => {
         const amount = ethers.utils.parseUnits('10', decimals);
@@ -167,19 +230,20 @@ describe('Unit tests', () => {
         it('should return totalLockedAmount and availableAmount from _user', async () => {
           const vestingAdmin = vestingManager.connect(signers.admin);
           // Set current date into block timestamp
-          const date = new Date();
-          let dateValueInSeconds: number = Math.floor(date.valueOf() / 1000); // Remove milliseconds as solidity block.timestamp works with seconds
+          const currentBlock = await ethers.provider.getBlock('latest');
           // Setup contract required parameters
-          await vestingAdmin.setReferenceDate(dateValueInSeconds);
+          await vestingAdmin.setReferenceDate(currentBlock.timestamp + 1);
           await vestingAdmin.createVestingSchema(0, 5000); // 50.00%
           await vestingManager.createVestingSchema(0, 1000); // 10.00%
 
           await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
           await vestingAdmin.deposit(signers.user.address, amount, 0);
           await vestingAdmin.deposit(signers.user.address, amount, 1);
+
           // Move forward in time
+          const date = new Date(currentBlock.timestamp * 1000);
           date.setDate(date.getDate() + 92); //Set time to next quarter
-          dateValueInSeconds = Math.floor(date.valueOf() / 1000);
+          const dateValueInSeconds = Math.floor(date.valueOf() / 1000);
           await network.provider.send('evm_setNextBlockTimestamp', [dateValueInSeconds]);
           await network.provider.send('evm_mine');
 

@@ -141,12 +141,11 @@ contract VestingManager is Ownable {
         for (uint256 i = 0; i < userHoldings.length; i++) {
             uint256 unlockedBalance = _getAvailableBalance(userHoldings[i]);
             if (unlockedBalance > 0) {
-                userHoldings[i].releasedAmount = unlockedBalance;
+                userHoldings[i].releasedAmount += unlockedBalance;
                 availableBalance += unlockedBalance;
             }
         }
         require(availableBalance > 0, 'There are no tokens available to claim');
-
         bool success = oidToken.transfer(_from, availableBalance);
         require(success, 'Token transfer failed!');
 
