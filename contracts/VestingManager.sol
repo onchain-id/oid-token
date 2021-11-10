@@ -30,7 +30,7 @@ contract VestingManager is Ownable {
     /* Events */
     event Deposit(address to, uint256 amount, uint8 schemaId);
     event Withdraw(address to, uint256 amount);
-    event SchemaCreated(uint8 schemaId, uint8 lockup, uint8 vesting);
+    event SchemaCreated(uint8 schemaId, uint8 lockup, uint16 vesting);
 
     /* Modifiers */
     modifier referenceInitiated() {
@@ -53,7 +53,7 @@ contract VestingManager is Ownable {
      */
     function setReferenceDate(uint256 _referenceDate) external onlyOwner {
         require(referenceDate == 0, 'Reference date has already been initialized');
-        require(_referenceDate == 0, 'Cannot set reference date to 0');
+        require(_referenceDate != 0, 'Cannot set reference date to 0');
         referenceDate = _referenceDate;
     }
 
@@ -81,15 +81,16 @@ contract VestingManager is Ownable {
      * @param _vesting percentage of total tokens released each quarter
      * @return created schema ID
      */
-    function createVestingSchema(uint8 _lockup, uint8 _vesting) external onlyOwner returns (uint8) {
+    function createVestingSchema(uint8 _lockup, uint16 _vesting) external onlyOwner returns (uint8) {
         // Validate that we are not overflowing uint8
         uint8 newSchemaId = schemaId;
         schemaId++;
         require(newSchemaId < schemaId, 'Schema ID overflow');
-        require(_vesting > 0 && _vesting <= 100, 'Vesting % should be withing 0 and 100');
+        require(_vesting > 0 && _vesting <= 10000, 'Vesting % should be withing 0 and 10000 (2 decimal floating point)');
         // Store new schema and emit event
         VestingSchemas[newSchemaId] = VestingSchema(_lockup, _vesting);
         emit SchemaCreated(newSchemaId, _lockup, _vesting);
+
         return newSchemaId;
     }
 
@@ -121,6 +122,10 @@ contract VestingManager is Ownable {
         require(success, 'Token transfer failed!');
         // Add new vesting storage to user holdings
         Holdings[_to].push(Holding(_amount, 0, _schemaId));
+        // Approve allowance to locker contract
+        bool succ = oidToken.approve(address(this), _amount);
+        require(succ, 'Token approval failed!');
+
         emit Deposit(_to, _amount, _schemaId);
     }
 
@@ -140,8 +145,9 @@ contract VestingManager is Ownable {
                 availableBalance += unlockedBalance;
             }
         }
-        require(availableBalance > 0, 'There are no tokens available for withdraw');
-        bool success = oidToken.transferFrom(address(this), _from, availableBalance);
+        require(availableBalance > 0, 'There are no tokens available to claim');
+
+        bool success = oidToken.transfer(_from, availableBalance);
         require(success, 'Token transfer failed!');
 
         emit Withdraw(_from, availableBalance);
@@ -151,26 +157,26 @@ contract VestingManager is Ownable {
      * @dev Fetches user's locked and available tokens accross different offerings.
      * @param _user the users address
      * @return totalLocked remaining user's locked tokens
-     * @return availableAmount amount of freely available tokens
+     * @return availableBalance amount of freely available tokens
      */
-    function getUserBalance(address _user) external view returns (uint256 totalLocked, uint256 availableAmount) {
+    function getUserBalance(address _user) external view returns (uint256 totalLocked, uint256 availableBalance) {
         require(_user != address(0), 'Cannot get balance for address 0');
         Holding[] memory userHoldings = Holdings[_user];
         if (userHoldings.length == 0) {
             return (0, 0);
         }
-        uint256 _totalLockedAmount = 0;
-        uint256 _availableAmount = 0;
+        uint256 _totalLocked = 0;
+        uint256 _availableBalance = 0;
         for (uint256 i = 0; i < userHoldings.length; i++) {
             uint256 unlockedBalance = _getAvailableBalance(userHoldings[i]);
             if (unlockedBalance > 0) {
-                userHoldings[i].releasedAmount = unlockedBalance;
-                _availableAmount += unlockedBalance;
+                _availableBalance += unlockedBalance;
             }
             // Acummulate locked balance
-            _totalLockedAmount += userHoldings[i].totalVestedAmount - unlockedBalance;
+            _totalLocked += (userHoldings[i].totalVestedAmount - unlockedBalance - userHoldings[i].releasedAmount);
         }
-        return (_totalLockedAmount, _availableAmount);
+
+        return (_totalLocked, _availableBalance);
     }
 
     /* Internal functions */
@@ -194,8 +200,11 @@ contract VestingManager is Ownable {
         }
 
         uint256 vestingTicks = (currentTime - startVesting) / QUARTER;
+
+        // Divide by floating point and %
         uint256 tokensPerTick = (_holding.totalVestedAmount * schema.vesting) / 10000;
         uint256 unlockedBalance = tokensPerTick * vestingTicks;
+
         if (_holding.releasedAmount >= unlockedBalance) {
             return 0;
         } else {

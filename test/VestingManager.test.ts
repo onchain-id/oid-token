@@ -1,7 +1,7 @@
 import chai, { expect } from 'chai';
 import { solidity } from 'ethereum-waffle';
 import { Contract } from 'ethers';
-import { artifacts, ethers, waffle } from 'hardhat';
+import { artifacts, ethers, network, waffle } from 'hardhat';
 import { Artifact } from 'hardhat/types';
 
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
@@ -79,10 +79,11 @@ describe('Unit tests', () => {
     });
     describe('Public functions', () => {
       describe('deposit', () => {
+        const amount = ethers.utils.parseUnits('10', decimals);
         context('when oidToken addr is not initialized', () => {
           it('should revert if oidToken address is not initialized', async () => {
             const userAddr = signers.user.address;
-            return await expect(vestingManager.connect(signers.user).deposit(userAddr, 10, 0)).to.be.revertedWith('OID token not initialized');
+            return await expect(vestingManager.connect(signers.user).deposit(userAddr, amount, 0)).to.be.revertedWith('OID token not initialized');
           });
         });
         context('when oidToken addr is initialized', () => {
@@ -90,7 +91,7 @@ describe('Unit tests', () => {
             await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
           });
           it('should revert if _to address is not a valid address', async () => {
-            return await expect(vestingManager.connect(signers.user).deposit(ethers.constants.AddressZero, 10, 0)).to.be.revertedWith(
+            return await expect(vestingManager.connect(signers.user).deposit(ethers.constants.AddressZero, amount, 0)).to.be.revertedWith(
               'Cannot deposit to address 0',
             );
           });
@@ -100,7 +101,9 @@ describe('Unit tests', () => {
           });
           it('should revert if vesting schema with id _schemaId does not exist', async () => {
             const userAddr = signers.user.address;
-            return await expect(vestingManager.connect(signers.user).deposit(userAddr, 10, 0)).to.be.revertedWith('Vesting schema does not exist');
+            return await expect(vestingManager.connect(signers.user).deposit(userAddr, amount, 0)).to.be.revertedWith(
+              'Vesting schema does not exist',
+            );
           });
           context('when vesting schema exists', () => {
             let schemaId: number;
@@ -111,24 +114,25 @@ describe('Unit tests', () => {
 
             it('should revert if msg.sender does not have enough allowance', async () => {
               const userAddr = signers.user.address;
-              return await expect(
-                vestingManager.connect(signers.admin).deposit(userAddr, ethers.utils.parseUnits('10', decimals), schemaId),
-              ).to.be.revertedWith('Not enough allowance');
+
+              return await expect(vestingManager.connect(signers.admin).deposit(userAddr, amount, schemaId)).to.be.revertedWith(
+                'Not enough allowance',
+              );
             });
             it('should revert if transferFrom is not successful', async () => {
               const userAddr = signers.user.address;
-              await oidToken.connect(signers.user).approve(vestingManager.address, 100);
+              await oidToken.connect(signers.user).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
               await oidToken.connect(signers.user).approve(userAddr, ethers.constants.MaxUint256);
-              return await expect(vestingManager.connect(signers.user).deposit(userAddr, 10, schemaId)).to.be.revertedWith(
+              return await expect(vestingManager.connect(signers.user).deposit(userAddr, amount, schemaId)).to.be.revertedWith(
                 'ERC20: transfer amount exceeds balance',
               );
             });
             it('should increase _to holdings successfully', async () => {
               const userAddr = signers.user.address;
-              await oidToken.connect(signers.admin).approve(vestingManager.address, 100);
-              return await expect(vestingManager.connect(signers.admin).deposit(userAddr, 10, schemaId))
+              await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
+              return await expect(vestingManager.connect(signers.admin).deposit(userAddr, amount, schemaId))
                 .to.emit(vestingManager, 'Deposit')
-                .withArgs(userAddr, 10, schemaId);
+                .withArgs(userAddr, ethers.utils.parseUnits('10', decimals), schemaId);
             });
           });
         });
@@ -144,9 +148,50 @@ describe('Unit tests', () => {
         it('should unlock tokens every quarter', async () => {});
       });
       describe('getUserBalance', () => {
-        it('should revert it fetching balance for address 0', async () => {});
-        it('should return (0,0) if user has no holdings', async () => {});
-        it('should return totalLockedAmount and availableAmount from _user', async () => {});
+        const amount = ethers.utils.parseUnits('10', decimals);
+
+        beforeEach('initialize oitToken addr', async () => {
+          await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
+        });
+        it('should revert it fetching balance for address 0', async () => {
+          return await expect(vestingManager.connect(signers.user).getUserBalance(ethers.constants.AddressZero)).to.be.revertedWith(
+            'Cannot get balance for address 0',
+          );
+        });
+        it('should return (0,0) if user has no holdings', async () => {
+          const userAddr = signers.user.address;
+          const [totalLocked, availableBalance] = await vestingManager.connect(signers.user).getUserBalance(userAddr);
+          expect(ethers.BigNumber.from(totalLocked).toNumber()).to.be.equal(0);
+          expect(ethers.BigNumber.from(availableBalance).toNumber()).to.be.equal(0);
+        });
+        it('should return totalLockedAmount and availableAmount from _user', async () => {
+          const vestingAdmin = vestingManager.connect(signers.admin);
+          // Set current date into block timestamp
+          const date = new Date();
+          let dateValueInSeconds: number = Math.floor(date.valueOf() / 1000); // Remove milliseconds as solidity block.timestamp works with seconds
+          // Setup contract required parameters
+          await vestingAdmin.setReferenceDate(dateValueInSeconds);
+          await vestingAdmin.createVestingSchema(0, 5000); // 50.00%
+          await vestingManager.createVestingSchema(0, 1000); // 10.00%
+
+          await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
+          await vestingAdmin.deposit(signers.user.address, amount, 0);
+          await vestingAdmin.deposit(signers.user.address, amount, 1);
+          // Move forward in time
+          date.setDate(date.getDate() + 92); //Set time to next quarter
+          dateValueInSeconds = Math.floor(date.valueOf() / 1000);
+          await network.provider.send('evm_setNextBlockTimestamp', [dateValueInSeconds]);
+          await network.provider.send('evm_mine');
+
+          // Should be able to claim part of the tokens
+          await expect(vestingManager.connect(signers.user).claim(signers.user.address))
+            .to.emit(vestingManager, 'Withdraw')
+            .withArgs(signers.user.address, ethers.utils.parseUnits('6', decimals));
+
+          const userBalance = await vestingManager.connect(signers.user).getUserBalance(signers.user.address);
+          expect(userBalance.totalLocked).to.be.equal(ethers.utils.parseUnits('14', decimals));
+          return expect(userBalance.availableBalance).to.be.equal(ethers.utils.parseUnits('0', decimals));
+        });
       });
     });
   });
