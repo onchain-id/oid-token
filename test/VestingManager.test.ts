@@ -53,51 +53,62 @@ describe('Unit tests', () => {
           });
           it('should set the oidAddress', async () => {
             await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
+            return expect(await vestingManager.oidToken()).to.equal(oidToken.address);
           });
           it('should revert if oidAddress has already been initialized', async () => {
             await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
-            return await expect(vestingManager.connect(signers.admin).setTokenAddress(oidToken.address)).to.be.revertedWith('Token address already set');
+            return await expect(vestingManager.connect(signers.admin).setTokenAddress(oidToken.address)).to.be.revertedWith(
+              'Token address already set',
+            );
           });
         });
       });
       describe('setReferenceDate', () => {
         it('should revert if an address not the owner attempts to set referenceDate', async () => {
-          return await expect(vestingManager.connect(signers.user).setReferenceDate(0)).to.be.revertedWith(
-            'Ownable: caller is not the owner',
-          );
+          return await expect(vestingManager.connect(signers.user).setReferenceDate(0)).to.be.revertedWith('Ownable: caller is not the owner');
         });
         context('if msg.sender is the contract owner', () => {
           it('should revert if referenceDate has already been initialized', async () => {
-            const date = (new Date()).getTime();
+            const date = new Date().getTime();
             const birthDateInUnixTimestamp = (date / 1000).toFixed(0);
             await vestingManager.connect(signers.admin);
             await vestingManager.setReferenceDate(birthDateInUnixTimestamp);
-            return await expect(vestingManager.setReferenceDate(birthDateInUnixTimestamp)).to.be.revertedWith('Reference date has already been initialized');
+            return await expect(vestingManager.setReferenceDate(birthDateInUnixTimestamp)).to.be.revertedWith(
+              'Reference date has already been initialized',
+            );
           });
           it('should revert if _referenceDate is 0', async () => {
             return await expect(vestingManager.setReferenceDate(0)).to.be.revertedWith('Cannot set reference date to 0');
           });
           it('should set the referenceDate', async () => {
-            await vestingManager.connect(signers.admin);
-            const date = (new Date()).getTime();
+            const date = new Date().getTime();
             const birthDateInUnixTimestamp = Number((date / 1000).toFixed(0));
-            await vestingManager.setReferenceDate(birthDateInUnixTimestamp);
+            expect(await vestingManager.referenceDate()).to.equal(0);
+            await vestingManager.connect(signers.admin).setReferenceDate(birthDateInUnixTimestamp);
+            return expect(await vestingManager.referenceDate()).to.equal(birthDateInUnixTimestamp);
           });
         });
       });
       describe('withdraw', () => {
         it('should revert if an address not the owner attempts to withdraw', async () => {
-          return await expect(vestingManager.connect(signers.user).withdraw()).to.be.revertedWith(
-            'Ownable: caller is not the owner',
-          );
+          return await expect(vestingManager.connect(signers.user).withdraw()).to.be.revertedWith('Ownable: caller is not the owner');
         });
         context('if msg.sender is the contract owner', () => {
-          it('should revert if transaction fails', async () => {
-            // TODO
-          });
           it('should withdraw the correct amount', async () => {
-            vestingManager.connect(signers.admin);
-            vestingManager.withdraw();
+            // Send ETH to vestingManager
+            await expect(signers.admin.sendTransaction({ to: vestingManager.address, value: ethers.utils.parseEther('1') }))
+              .to.emit(vestingManager, 'EthDeposit')
+              .withArgs(signers.admin.address, ethers.utils.parseEther('1'), ethers.utils.parseEther('1'));
+
+            await signers.admin.sendTransaction({
+              to: vestingManager.address,
+              value: ethers.utils.parseEther('1'),
+              data: '0xc7d5639eccfbe65ea3adde99fbe163389e8395fa',
+            });
+
+            expect(await waffle.provider.getBalance(vestingManager.address)).to.equal(ethers.utils.parseEther('2'));
+            await vestingManager.connect(signers.admin).withdraw();
+            return expect(await waffle.provider.getBalance(vestingManager.address)).to.equal(ethers.utils.parseEther('0'));
           });
         });
       });
@@ -109,7 +120,6 @@ describe('Unit tests', () => {
         });
         context('if msg.sender is the contract owner', () => {
           it('should revert if schemaId overflows', async () => {
-            await vestingManager.connect(signers.admin);
             vestingManager.setSchemaId(255);
             return await expect(vestingManager.connect(signers.admin).createVestingSchema(13, 1234)).to.be.revertedWith(
               'panic code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)',
@@ -122,9 +132,8 @@ describe('Unit tests', () => {
           });
           it('should create a new schema, emit an event and return its ID', async () => {
             await vestingManager.connect(signers.admin);
-            await expect(vestingManager.createVestingSchema(13, 1000))
-              .to.emit(vestingManager, 'SchemaCreated')
-              .withArgs(0, 13, 1000);
+            await expect(vestingManager.createVestingSchema(13, 1000)).to.emit(vestingManager, 'SchemaCreated').withArgs(0, 13, 1000);
+            return await expect(vestingManager.createVestingSchema(0, 1)).to.emit(vestingManager, 'SchemaCreated').withArgs(1, 0, 1);
           });
         });
       });

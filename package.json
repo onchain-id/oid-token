@@ -8,6 +8,7 @@
     "coverage": "npx hardhat coverage",
     "deploy": "hardhat deploy:OnchainId deploy:VestingManager",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
+    "lint:fix": "npx prettier --write 'contracts/**/*.sol",
     "lint:sol": "solhint --config ./.solhint.json \"contracts/**/*.sol\"",
     "lint:ts": "eslint --config ./.eslintrc.yaml --ignore-path ./.eslintignore --ext .js,.ts .",
     "prepare": "husky install",

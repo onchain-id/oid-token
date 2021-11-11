@@ -1,0 +1,10 @@
+coverage/**/*.js
+coverage/**/*.json
+coverage.json
+artifacts/**/*.json
+cache/**/*.json
+tests/format/**/*.sol
+tests/format/RespectDefaultOptions/respect-default-options.js
+src/prettier-comments/**/*.js
+types/**/*.ts
+build/**/*.json

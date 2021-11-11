@@ -31,6 +31,7 @@ contract VestingManager is Ownable {
     event Deposit(address to, uint256 amount, uint8 schemaId);
     event Withdraw(address to, uint256 amount);
     event SchemaCreated(uint8 schemaId, uint8 lockup, uint16 vesting);
+    event EthDeposit(address sender, uint256 value, uint256 balance);
 
     /* Modifiers */
     modifier referenceInitiated() {
@@ -80,8 +81,10 @@ contract VestingManager is Ownable {
      * @dev Default withdraw function in case someone deposits ETH erroneously.
      */
     function withdraw() external onlyOwner {
-        (bool success, ) = payable(msg.sender).call{value: address(this).balance}('');
-        require(success, 'Transaction error');
+        uint256 amount = address(this).balance;
+
+        (bool success, ) = owner().call{value: amount}('');
+        require(success, 'Failed to send Ether');
     }
 
     /**
@@ -94,7 +97,6 @@ contract VestingManager is Ownable {
         // Validate that we are not overflowing uint8
         uint8 newSchemaId = schemaId;
         schemaId++;
-        require(newSchemaId < schemaId, 'Schema ID overflow');
         require(_vesting > 0 && _vesting <= 10000, 'Vesting % should be withing 0 and 10000 (2 decimal floating point)');
         // Store new schema and emit event
         VestingSchemas[newSchemaId] = VestingSchema(_lockup, _vesting);
@@ -131,9 +133,6 @@ contract VestingManager is Ownable {
         require(success, 'Token transfer failed!');
         // Add new vesting storage to user holdings
         Holdings[_to].push(Holding(_amount, 0, _schemaId));
-        // Approve allowance to locker contract
-        bool succ = oidToken.approve(address(this), _amount);
-        require(succ, 'Token approval failed!');
 
         emit Deposit(_to, _amount, _schemaId);
     }
@@ -185,6 +184,12 @@ contract VestingManager is Ownable {
         }
 
         return (_totalLocked, _availableBalance);
+    }
+
+    fallback() external payable {}
+
+    receive() external payable {
+        emit EthDeposit(msg.sender, msg.value, address(this).balance);
     }
 
     /* Internal functions */
