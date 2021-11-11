@@ -48,32 +48,84 @@ describe('Unit tests', () => {
           );
         });
         context('if msg.sender is the contract owner', () => {
-          it('should revert if _oidAddress is 0x0', async () => {});
-          it('should set the oidAddress', async () => {});
-          it('should revert if oidAddress has already been initialized', async () => {});
+          it('should revert if _oidAddress is 0x0', async () => {
+            return await expect(vestingManager.connect(signers.admin).setTokenAddress('0x0')).to.be.reverted;
+          });
+          it('should set the oidAddress', async () => {
+            await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
+          });
+          it('should revert if oidAddress has already been initialized', async () => {
+            await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
+            return await expect(vestingManager.connect(signers.admin).setTokenAddress(oidToken.address)).to.be.revertedWith('Token address already set');
+          });
         });
       });
       describe('setReferenceDate', () => {
-        it('should revert if an address not the owner attempts to set referenceDate', async () => {});
+        it('should revert if an address not the owner attempts to set referenceDate', async () => {
+          return await expect(vestingManager.connect(signers.user).setReferenceDate(0)).to.be.revertedWith(
+            'Ownable: caller is not the owner',
+          );
+        });
         context('if msg.sender is the contract owner', () => {
-          it('should revert if referenceDate has already been initialized', async () => {});
-          it('should revert if _referenceDate is 0', async () => {});
-          it('should set the referenceDate', async () => {});
+          it('should revert if referenceDate has already been initialized', async () => {
+            const date = (new Date()).getTime();
+            const birthDateInUnixTimestamp = (date / 1000).toFixed(0);
+            await vestingManager.connect(signers.admin);
+            await vestingManager.setReferenceDate(birthDateInUnixTimestamp);
+            return await expect(vestingManager.setReferenceDate(birthDateInUnixTimestamp)).to.be.revertedWith('Reference date has already been initialized');
+          });
+          it('should revert if _referenceDate is 0', async () => {
+            return await expect(vestingManager.setReferenceDate(0)).to.be.revertedWith('Cannot set reference date to 0');
+          });
+          it('should set the referenceDate', async () => {
+            await vestingManager.connect(signers.admin);
+            const date = (new Date()).getTime();
+            const birthDateInUnixTimestamp = Number((date / 1000).toFixed(0));
+            await vestingManager.setReferenceDate(birthDateInUnixTimestamp);
+          });
         });
       });
       describe('withdraw', () => {
-        it('should revert if an address not the owner attempts to withdraw', async () => {});
+        it('should revert if an address not the owner attempts to withdraw', async () => {
+          return await expect(vestingManager.connect(signers.user).withdraw()).to.be.revertedWith(
+            'Ownable: caller is not the owner',
+          );
+        });
         context('if msg.sender is the contract owner', () => {
-          it('should revert if transaction fails', async () => {});
-          it('should withdraw the correct amount', async () => {});
+          it('should revert if transaction fails', async () => {
+            // TODO
+          });
+          it('should withdraw the correct amount', async () => {
+            vestingManager.connect(signers.admin);
+            vestingManager.withdraw();
+          });
         });
       });
       describe('createVestingSchema', () => {
-        it('should revert if an address not the owner attempts to create a new vesting schema', async () => {});
+        it('should revert if an address not the owner attempts to create a new vesting schema', async () => {
+          return await expect(vestingManager.connect(signers.user).createVestingSchema(13, 1000)).to.be.revertedWith(
+            'Ownable: caller is not the owner',
+          );
+        });
         context('if msg.sender is the contract owner', () => {
-          it('should revert if schemaId overflows', async () => {});
-          it('should revert if _vesting is not within 0 and 100', async () => {});
-          it('should create a new schema, emit an event and return its ID', async () => {});
+          it('should revert if schemaId overflows', async () => {
+            await vestingManager.connect(signers.admin);
+            vestingManager.setSchemaId(255);
+            return await expect(vestingManager.connect(signers.admin).createVestingSchema(13, 1234)).to.be.revertedWith(
+              'panic code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)',
+            );
+          });
+          it('should revert if _vesting is not within 0 and 100', async () => {
+            return await expect(vestingManager.connect(signers.admin).createVestingSchema(13, 12345)).to.be.revertedWith(
+              'Vesting % should be withing 0 and 10000 (2 decimal floating point)',
+            );
+          });
+          it('should create a new schema, emit an event and return its ID', async () => {
+            await vestingManager.connect(signers.admin);
+            await expect(vestingManager.createVestingSchema(13, 1000))
+              .to.emit(vestingManager, 'SchemaCreated')
+              .withArgs(0, 13, 1000);
+          });
         });
       });
     });

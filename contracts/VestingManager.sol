@@ -14,7 +14,7 @@ contract VestingManager is Ownable {
 
     struct VestingSchema {
         uint8 lockup; // Number of quarters during which the holders tokens are locked and not accountable for vesting
-        uint16 vesting; // % of total tokens realeased every quarter with two decimals of resolution (i.e. 1256 -> 12,56%)
+        uint16 vesting; // % of total tokens released every quarter with two decimals of resolution (i.e. 1256 -> 12,56%)
     }
 
     struct Holding {
@@ -58,6 +58,15 @@ contract VestingManager is Ownable {
     }
 
     /**
+     * @dev Sets the schema ID of the contract.
+     * @param _schemaId the new schema ID
+     */
+    function setSchemaId(uint8 _schemaId) external onlyOwner {
+        require(_schemaId <= 255, 'Cannot set schema ID higher than 255');
+        schemaId = _schemaId;
+    }
+
+    /**
      * @dev Initializes the OID token address
      * @param _oidAddress Address of the OID token
      */
@@ -76,7 +85,7 @@ contract VestingManager is Ownable {
     }
 
     /**
-     * @dev Withdraws remaining unlocked tokens accross offerings.
+     * @dev Withdraws remaining unlocked tokens across offerings.
      * @param _lockup period in quarters that tokens remain blocked
      * @param _vesting percentage of total tokens released each quarter
      * @return created schema ID
@@ -97,7 +106,7 @@ contract VestingManager is Ownable {
     /* Public functions */
 
     /**
-     * @dev Withdraws remaining unlocked tokens accross offerings.
+     * @dev Withdraws remaining unlocked tokens across offerings.
      * @param _to address of the recipient of the tokens
      * @param _amount of tokens to be deposited into the contract
      * @param _schemaId vesting schema used in the deposit
@@ -153,7 +162,7 @@ contract VestingManager is Ownable {
     }
 
     /**
-     * @dev Fetches user's locked and available tokens accross different offerings.
+     * @dev Fetches user's locked and available tokens across different offerings.
      * @param _user the users address
      * @return totalLocked remaining user's locked tokens
      * @return availableBalance amount of freely available tokens
