@@ -58,15 +58,6 @@ contract VestingManager is Ownable {
     }
 
     /**
-     * @dev Sets the schema ID of the contract.
-     * @param _schemaId the new schema ID
-     */
-    function setSchemaId(uint8 _schemaId) external onlyOwner {
-        require(_schemaId <= 255, 'Cannot set schema ID higher than 255');
-        schemaId = _schemaId;
-    }
-
-    /**
      * @dev Initializes the OID token address
      * @param _oidAddress Address of the OID token
      */

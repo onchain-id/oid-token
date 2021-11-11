@@ -49,10 +49,12 @@ describe('Unit tests', () => {
         });
         context('if msg.sender is the contract owner', () => {
           it('should revert if _oidAddress is 0x0', async () => {
-            return await expect(vestingManager.connect(signers.admin).setTokenAddress('0x0')).to.be.reverted;
+            return await expect(vestingManager.connect(signers.admin).setTokenAddress(ethers.constants.AddressZero)).to.be.revertedWith('Token address cannot be the null address');
           });
           it('should set the oidAddress', async () => {
             await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
+            const vestingManagerOidAddress = await vestingManager.oidToken();
+            expect(vestingManagerOidAddress).to.be.equal(oidToken.address);
           });
           it('should revert if oidAddress has already been initialized', async () => {
             await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
@@ -108,13 +110,6 @@ describe('Unit tests', () => {
           );
         });
         context('if msg.sender is the contract owner', () => {
-          it('should revert if schemaId overflows', async () => {
-            await vestingManager.connect(signers.admin);
-            vestingManager.setSchemaId(255);
-            return await expect(vestingManager.connect(signers.admin).createVestingSchema(13, 1234)).to.be.revertedWith(
-              'panic code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)',
-            );
-          });
           it('should revert if _vesting is not within 0 and 100', async () => {
             return await expect(vestingManager.connect(signers.admin).createVestingSchema(13, 12345)).to.be.revertedWith(
               'Vesting % should be withing 0 and 10000 (2 decimal floating point)',
