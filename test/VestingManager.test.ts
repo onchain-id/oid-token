@@ -32,7 +32,7 @@ describe('Unit tests', () => {
   describe('VestingManager', () => {
     beforeEach(async () => {
       const vestingManagerArtifact: Artifact = await artifacts.readArtifact('VestingManager');
-      vestingManager = <VestingManager>await waffle.deployContract(signers.admin, vestingManagerArtifact);
+      vestingManager = <VestingManager>await waffle.deployContract(signers.admin, vestingManagerArtifact, [oidToken.address]);
     });
 
     it('should deploy', async () => {
@@ -41,29 +41,19 @@ describe('Unit tests', () => {
 
     //Admin functions
     describe('Admin functions', () => {
-      describe('setTokenAddress', () => {
-        it('should revert if an address not the owner attempts to set oidAddress', async () => {
-          return await expect(vestingManager.connect(signers.user).setTokenAddress('0xc7d5639eccfbe65ea3adde99fbe163389e8395fa')).to.be.revertedWith(
-            'Ownable: caller is not the owner',
-          );
-        });
+      describe('constructor', () => {
         context('if msg.sender is the contract owner', () => {
           it('should revert if _oidAddress is 0x0', async () => {
-            return await expect(vestingManager.connect(signers.admin).setTokenAddress(ethers.constants.AddressZero)).to.be.revertedWith(
-              'Token address cannot be the null address',
-            );
-          });
-          it('should set the oidAddress', async () => {
-            await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
-
-            const vestingManagerOidAddress = await vestingManager.oidToken();
-            expect(vestingManagerOidAddress).to.be.equal(oidToken.address);
-          });
-          it('should revert if oidAddress has already been initialized', async () => {
-            await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
-            return await expect(vestingManager.connect(signers.admin).setTokenAddress(oidToken.address)).to.be.revertedWith(
-              'Token address already set',
-            );
+            const artifact: Artifact = await artifacts.readArtifact('VestingManager');
+            try {
+              <VestingManager>await waffle.deployContract(signers.admin, artifact, [ethers.constants.AddressZero]);
+            } catch (e: unknown) {
+              if (e instanceof Error) {
+                return expect(e.message).to.equal(
+                  "VM Exception while processing transaction: reverted with reason string 'Token address cannot be addr(0)'",
+                );
+              }
+            }
           });
         });
       });
@@ -139,16 +129,7 @@ describe('Unit tests', () => {
     describe('Public functions', () => {
       describe('deposit', () => {
         const amount = ethers.utils.parseUnits('10', decimals);
-        context('when oidToken addr is not initialized', () => {
-          it('should revert if oidToken address is not initialized', async () => {
-            const userAddr = signers.user.address;
-            return await expect(vestingManager.connect(signers.user).deposit(userAddr, amount, 0)).to.be.revertedWith('OID token not initialized');
-          });
-        });
         context('when oidToken addr is initialized', () => {
-          beforeEach('initialize oitToken addr', async () => {
-            await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
-          });
           it('should revert if _to address is not a valid address', async () => {
             return await expect(vestingManager.connect(signers.user).deposit(ethers.constants.AddressZero, amount, 0)).to.be.revertedWith(
               'Cannot deposit to address 0',
@@ -200,7 +181,6 @@ describe('Unit tests', () => {
         beforeEach('setup contract', async () => {
           await vestingManager.connect(signers.admin).createVestingSchema(0, 5000);
         });
-
         it('should revert if referenceDate is not initialized', async () => {
           return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith('Reference date not initialized');
         });
@@ -209,13 +189,8 @@ describe('Unit tests', () => {
             const referenceDate = Math.floor(new Date().valueOf() / 1000);
             await vestingManager.connect(signers.admin).setReferenceDate(referenceDate);
           });
-
-          it('should revert if oidToken is not initialized', async () => {
-            return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith('OID token not initialized');
-          });
           context('when oidToken addr is initialized', async () => {
             beforeEach('initialize oidToken addr', async () => {
-              await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
               await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
             });
             it('should revert if user does not have any holding', async () => {
@@ -273,7 +248,6 @@ describe('Unit tests', () => {
         const amount = ethers.utils.parseUnits('10', decimals);
 
         beforeEach('initialize oitToken addr', async () => {
-          await vestingManager.connect(signers.admin).setTokenAddress(oidToken.address);
           await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.constants.MaxUint256);
         });
         it('should revert it fetching balance for address 0', async () => {

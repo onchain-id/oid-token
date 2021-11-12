@@ -3,11 +3,14 @@ pragma solidity ^0.8.0;
 
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
+import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 
 import 'hardhat/console.sol';
 
 contract VestingManager is Ownable {
-    ERC20 public oidToken;
+    using SafeERC20 for IERC20;
+
+    IERC20 public immutable oidToken;
     uint256 public referenceDate = 0;
     uint32 public constant QUARTER = 13 weeks;
     uint8 public schemaId = 0;
@@ -39,12 +42,10 @@ contract VestingManager is Ownable {
         _;
     }
 
-    modifier oidTokenInitiated() {
-        require(address(oidToken) != address(0), 'OID token not initialized');
-        _;
+    constructor(IERC20 oidToken_) {
+        require(address(oidToken_) != address(0), 'Token address cannot be addr(0)');
+        oidToken = oidToken_;
     }
-
-    constructor() {}
 
     /* Admin functions */
 
@@ -56,16 +57,6 @@ contract VestingManager is Ownable {
         require(referenceDate == 0, 'Reference date has already been initialized');
         require(_referenceDate != 0, 'Cannot set reference date to 0');
         referenceDate = _referenceDate;
-    }
-
-    /**
-     * @dev Initializes the OID token address
-     * @param _oidAddress Address of the OID token
-     */
-    function setTokenAddress(address _oidAddress) external onlyOwner {
-        require(_oidAddress != address(0), 'Token address cannot be the null address');
-        require(address(oidToken) == address(0), 'Token address already set');
-        oidToken = ERC20(_oidAddress);
     }
 
     /**
@@ -108,7 +99,7 @@ contract VestingManager is Ownable {
         address _to,
         uint256 _amount,
         uint8 _schemaId
-    ) external oidTokenInitiated {
+    ) external {
         // Validate input parameters
         require(_to != address(0), 'Cannot deposit to address 0');
         require(_amount > 0, 'Value must be positive');
@@ -120,8 +111,7 @@ contract VestingManager is Ownable {
         // Validate that spender is allowed to operate with OID token
         require(oidToken.allowance(msg.sender, address(this)) >= _amount, 'Not enough allowance');
         // Transfer OID token to locker contract
-        bool success = oidToken.transferFrom(msg.sender, address(this), _amount);
-        require(success, 'Token transfer failed!');
+        oidToken.safeTransferFrom(msg.sender, address(this), _amount);
         // Add new vesting storage to user holdings
         Holdings[_to].push(Holding(_amount, 0, _schemaId));
 
@@ -132,7 +122,7 @@ contract VestingManager is Ownable {
      * @dev Withdraws remaining unlocked tokens from address.
      * @param _from the users address
      */
-    function claim(address _from) external referenceInitiated oidTokenInitiated {
+    function claim(address _from) external referenceInitiated {
         Holding[] storage userHoldings = Holdings[_from];
         require(userHoldings.length > 0, 'User does not have any holdings');
 
@@ -145,8 +135,7 @@ contract VestingManager is Ownable {
             }
         }
         require(availableBalance > 0, 'There are no tokens available to claim');
-        bool success = oidToken.transfer(_from, availableBalance);
-        require(success, 'Token transfer failed!');
+        oidToken.safeTransfer(_from, availableBalance);
 
         emit Withdraw(_from, availableBalance);
     }
@@ -199,6 +188,7 @@ contract VestingManager is Ownable {
             return 0;
         }
 
+        // solhint-disable-next-line not-rely-on-time
         uint256 currentTime = block.timestamp;
         VestingSchema memory schema = VestingSchemas[_holding.vestingSchema];
 

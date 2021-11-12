@@ -1,1 +1,2 @@
 import './onchainId';
+import './vestingManager';
