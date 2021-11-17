@@ -79,7 +79,7 @@ contract VestingManager is Ownable {
         // Validate that we are not overflowing uint8
         uint8 newSchemaId = schemaId;
         schemaId++;
-        require(_vesting > 0 && _vesting <= 10000, 'Vesting % should be withing 0 and 10000 (2 decimal floating point)');
+        require(_vesting > 0 && _vesting <= 10000, 'Vesting % should be within 0 and 10000 (2 decimal floating point)');
         // Store new schema and emit event
         VestingSchemas[newSchemaId] = VestingSchema(_lockup, _vesting);
         emit SchemaCreated(newSchemaId, _lockup, _vesting);
