@@ -23,7 +23,7 @@ contract VestingManager is Ownable {
     struct Holding {
         uint256 totalVestedAmount; // amount of tokens in vesting on the contract for a given address and a given vesting schema 
         uint256 releasedAmount; // amount of tokens already released from totalVestedAmount
-        uint8 vestingSchema;
+        uint8 vestingSchema; // vesting schema used to calculate the amount of vested tokens at a given date 
     }
 
     /* Mappings */
