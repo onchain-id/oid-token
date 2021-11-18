@@ -2,15 +2,14 @@
 pragma solidity ^0.8.0;
 
 import '@openzeppelin/contracts/access/Ownable.sol';
-import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
 import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
-
-import 'hardhat/console.sol';
+import '@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol';
 
 contract VestingManager is Ownable {
+    using SafeERC20 for IERC20Metadata;
     using SafeERC20 for IERC20;
 
-    IERC20 public immutable oidToken;
+    IERC20Metadata public immutable oidToken;
     uint256 public referenceDate = 0;
     uint32 public constant QUARTER = 13 weeks;
     uint8 public schemaId = 0;
@@ -34,7 +33,6 @@ contract VestingManager is Ownable {
     event Deposit(address to, uint256 amount, uint8 schemaId);
     event Withdraw(address to, uint256 amount);
     event SchemaCreated(uint8 schemaId, uint8 lockup, uint16 vesting);
-    event EthDeposit(address sender, uint256 value, uint256 balance);
 
     /* Modifiers */
     modifier referenceInitiated() {
@@ -42,8 +40,8 @@ contract VestingManager is Ownable {
         _;
     }
 
-    constructor(IERC20 oidToken_) {
-        require(address(oidToken_) != address(0), 'Token address cannot be addr(0)');
+    constructor(IERC20Metadata oidToken_) {
+        require(keccak256(abi.encodePacked(oidToken_.symbol())) == keccak256(abi.encodePacked('OID')), 'OID token must be used');
         oidToken = oidToken_;
     }
 
@@ -60,22 +58,11 @@ contract VestingManager is Ownable {
     }
 
     /**
-     * @dev Default withdraw function in case someone deposits ETH erroneously.
-     */
-    function withdraw() external onlyOwner {
-        uint256 amount = address(this).balance;
-
-        (bool success, ) = owner().call{value: amount}('');
-        require(success, 'Failed to send Ether');
-    }
-
-    /**
      * @dev Withdraws remaining unlocked tokens across offerings.
      * @param _lockup period in quarters that tokens remain blocked
      * @param _vesting percentage of total tokens released each quarter
-     * @return created schema ID
      */
-    function createVestingSchema(uint8 _lockup, uint16 _vesting) external onlyOwner returns (uint8) {
+    function createVestingSchema(uint8 _lockup, uint16 _vesting) external onlyOwner {
         // Validate that we are not overflowing uint8
         uint8 newSchemaId = schemaId;
         schemaId++;
@@ -83,8 +70,6 @@ contract VestingManager is Ownable {
         // Store new schema and emit event
         VestingSchemas[newSchemaId] = VestingSchema(_lockup, _vesting);
         emit SchemaCreated(newSchemaId, _lockup, _vesting);
-
-        return newSchemaId;
     }
 
     /* Public functions */
@@ -108,8 +93,6 @@ contract VestingManager is Ownable {
         VestingSchema memory schema = VestingSchemas[_schemaId];
         require(schema.vesting != 0, 'Vesting schema does not exist');
 
-        // Validate that spender is allowed to operate with OID token
-        require(oidToken.allowance(msg.sender, address(this)) >= _amount, 'Not enough allowance');
         // Transfer OID token to locker contract
         oidToken.safeTransferFrom(msg.sender, address(this), _amount);
         // Add new vesting storage to user holdings
@@ -134,8 +117,10 @@ contract VestingManager is Ownable {
                 availableBalance += unlockedBalance;
             }
         }
-        require(availableBalance > 0, 'There are no tokens available to claim');
-        oidToken.safeTransfer(_from, availableBalance);
+        // Only transfer if there is any balance to transfer
+        if (availableBalance > 0) {
+            oidToken.safeTransfer(_from, availableBalance);
+        }
 
         emit Withdraw(_from, availableBalance);
     }
@@ -164,12 +149,6 @@ contract VestingManager is Ownable {
         }
 
         return (_totalLocked, _availableBalance);
-    }
-
-    fallback() external payable {}
-
-    receive() external payable {
-        emit EthDeposit(msg.sender, msg.value, address(this).balance);
     }
 
     /* Internal functions */

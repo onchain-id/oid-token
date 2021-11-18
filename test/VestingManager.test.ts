@@ -1,9 +1,10 @@
 import chai, { expect } from 'chai';
 import { solidity } from 'ethereum-waffle';
-import { Contract } from 'ethers';
+import { BigNumber, Contract } from 'ethers';
 import { artifacts, ethers, network, waffle } from 'hardhat';
 import { Artifact } from 'hardhat/types';
 
+import { FakeContract, smock } from '@defi-wonderland/smock';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 
 import { OnchainId } from '../types';
@@ -11,6 +12,7 @@ import { VestingManager } from '../types/VestingManager';
 import { Signers } from './types';
 
 chai.use(solidity);
+chai.use(smock.matchers);
 
 describe('Unit tests', () => {
   const decimals = 18;
@@ -18,6 +20,10 @@ describe('Unit tests', () => {
   let oidToken: Contract;
   let vestingManager: Contract;
   const signers: Signers = {} as Signers;
+
+  const parseUnits = (numStr: string): BigNumber => {
+    return ethers.utils.parseUnits(numStr, decimals);
+  };
 
   before(async () => {
     const signersArray: SignerWithAddress[] = await ethers.getSigners();
@@ -45,13 +51,13 @@ describe('Unit tests', () => {
         context('if msg.sender is the contract owner', () => {
           it('should revert if _oidAddress is 0x0', async () => {
             const artifact: Artifact = await artifacts.readArtifact('VestingManager');
+            const fakeOidToken: FakeContract<OnchainId> = await smock.fake('OnchainId');
+            fakeOidToken.symbol.returns('NotOID');
             try {
-              <VestingManager>await waffle.deployContract(signers.admin, artifact, [ethers.constants.AddressZero]);
+              <VestingManager>await waffle.deployContract(signers.admin, artifact, [fakeOidToken.address]);
             } catch (e: unknown) {
               if (e instanceof Error) {
-                return expect(e.message).to.equal(
-                  "VM Exception while processing transaction: reverted with reason string 'Token address cannot be addr(0)'",
-                );
+                return expect(e.message).to.equal("VM Exception while processing transaction: reverted with reason string 'OID token must be used'");
               }
             }
           });
@@ -83,29 +89,6 @@ describe('Unit tests', () => {
           });
         });
       });
-      describe('withdraw', () => {
-        it('should revert if an address not the owner attempts to withdraw', async () => {
-          return await expect(vestingManager.connect(signers.user).withdraw()).to.be.revertedWith('Ownable: caller is not the owner');
-        });
-        context('if msg.sender is the contract owner', () => {
-          it('should withdraw the correct amount', async () => {
-            // Send ETH to vestingManager
-            await expect(signers.admin.sendTransaction({ to: vestingManager.address, value: ethers.utils.parseEther('1') }))
-              .to.emit(vestingManager, 'EthDeposit')
-              .withArgs(signers.admin.address, ethers.utils.parseEther('1'), ethers.utils.parseEther('1'));
-
-            await signers.admin.sendTransaction({
-              to: vestingManager.address,
-              value: ethers.utils.parseEther('1'),
-              data: '0xc7d5639eccfbe65ea3adde99fbe163389e8395fa',
-            });
-
-            expect(await waffle.provider.getBalance(vestingManager.address)).to.equal(ethers.utils.parseEther('2'));
-            await vestingManager.connect(signers.admin).withdraw();
-            return expect(await waffle.provider.getBalance(vestingManager.address)).to.equal(ethers.utils.parseEther('0'));
-          });
-        });
-      });
       describe('createVestingSchema', () => {
         it('should revert if an address not the owner attempts to create a new vesting schema', async () => {
           return await expect(vestingManager.connect(signers.user).createVestingSchema(13, 1000)).to.be.revertedWith(
@@ -128,7 +111,7 @@ describe('Unit tests', () => {
     });
     describe('Public functions', () => {
       describe('deposit', () => {
-        const amount = ethers.utils.parseUnits('10', decimals);
+        const amount = parseUnits('10');
         context('when oidToken addr is initialized', () => {
           it('should revert if _to address is not a valid address', async () => {
             return await expect(vestingManager.connect(signers.user).deposit(ethers.constants.AddressZero, amount, 0)).to.be.revertedWith(
@@ -156,12 +139,12 @@ describe('Unit tests', () => {
               const userAddr = signers.user.address;
 
               return await expect(vestingManager.connect(signers.admin).deposit(userAddr, amount, schemaId)).to.be.revertedWith(
-                'Not enough allowance',
+                'ERC20: transfer amount exceeds allowance',
               );
             });
             it('should revert if transferFrom is not successful', async () => {
               const userAddr = signers.user.address;
-              await oidToken.connect(signers.user).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
+              await oidToken.connect(signers.user).approve(vestingManager.address, parseUnits('100'));
               await oidToken.connect(signers.user).approve(userAddr, ethers.constants.MaxUint256);
               return await expect(vestingManager.connect(signers.user).deposit(userAddr, amount, schemaId)).to.be.revertedWith(
                 'ERC20: transfer amount exceeds balance',
@@ -169,10 +152,10 @@ describe('Unit tests', () => {
             });
             it('should increase _to holdings successfully', async () => {
               const userAddr = signers.user.address;
-              await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
+              await oidToken.connect(signers.admin).approve(vestingManager.address, parseUnits('100'));
               return await expect(vestingManager.connect(signers.admin).deposit(userAddr, amount, schemaId))
                 .to.emit(vestingManager, 'Deposit')
-                .withArgs(userAddr, ethers.utils.parseUnits('10', decimals), schemaId);
+                .withArgs(userAddr, parseUnits('10'), schemaId);
             });
           });
         });
@@ -191,24 +174,23 @@ describe('Unit tests', () => {
           });
           context('when oidToken addr is initialized', async () => {
             beforeEach('initialize oidToken addr', async () => {
-              await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.utils.parseUnits('100', decimals));
+              await oidToken.connect(signers.admin).approve(vestingManager.address, parseUnits('100'));
             });
             it('should revert if user does not have any holding', async () => {
               return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith(
                 'User does not have any holding',
               );
             });
-            it('should revert if there is no available balance', async () => {
+            it('should transfer 0 tokens and emit an event', async () => {
               // Add holding to user
-              await vestingManager.connect(signers.admin).deposit(signers.user.address, ethers.utils.parseUnits('10', decimals), 0);
-              return await expect(vestingManager.connect(signers.user).claim(signers.user.address)).to.be.revertedWith(
-                'There are no tokens available to claim',
-              );
+              await vestingManager.connect(signers.admin).deposit(signers.user.address, parseUnits('10'), 0);
+              return await expect(vestingManager.connect(signers.user).claim(signers.user.address))
+                .to.emit(vestingManager, 'Withdraw')
+                .withArgs(signers.user.address, parseUnits('0'));
             });
             it('should transfer available tokens and emit an event', async () => {
               const userInstance = vestingManager.connect(signers.user);
-              await vestingManager.connect(signers.admin).deposit(signers.user.address, ethers.utils.parseUnits('10', decimals), 0);
-
+              await vestingManager.connect(signers.admin).deposit(signers.user.address, parseUnits('10'), 0);
               // Back to the future
               const date = new Date();
               date.setDate(date.getDate() + 92); //Set time to next quarter
@@ -220,9 +202,11 @@ describe('Unit tests', () => {
               // Should be able to claim part of the tokens
               await expect(userInstance.claim(signers.user.address))
                 .to.emit(vestingManager, 'Withdraw')
-                .withArgs(signers.user.address, ethers.utils.parseUnits('5', decimals));
+                .withArgs(signers.user.address, parseUnits('5'));
 
-              await expect(userInstance.claim(signers.user.address)).to.be.revertedWith('There are no tokens available to claim');
+              await expect(userInstance.claim(signers.user.address))
+                .to.emit(vestingManager, 'Withdraw')
+                .withArgs(signers.user.address, parseUnits('0'));
 
               // Unlock rest of tokens and claim them
               date.setDate(date.getDate() + 92); //Set time to next quarter
@@ -232,20 +216,22 @@ describe('Unit tests', () => {
               await network.provider.send('evm_mine');
               await expect(userInstance.claim(signers.user.address))
                 .to.emit(vestingManager, 'Withdraw')
-                .withArgs(signers.user.address, ethers.utils.parseUnits('5', decimals));
+                .withArgs(signers.user.address, parseUnits('5'));
 
               // Should not be able to claim anymore and balance locked should be 0
-              await expect(userInstance.claim(signers.user.address)).to.be.revertedWith('There are no tokens available to claim');
+              await expect(userInstance.claim(signers.user.address))
+                .to.emit(vestingManager, 'Withdraw')
+                .withArgs(signers.user.address, parseUnits('0'));
 
               const userBalance = await userInstance.getUserBalance(signers.user.address);
-              expect(userBalance.totalLocked).to.equal(ethers.utils.parseUnits('0', decimals));
-              return expect(userBalance.availableBalance).to.equal(ethers.utils.parseUnits('0', decimals));
+              expect(userBalance.totalLocked).to.equal(parseUnits('0'));
+              return expect(userBalance.availableBalance).to.equal(parseUnits('0'));
             });
           });
         });
       });
       describe('getUserBalance', () => {
-        const amount = ethers.utils.parseUnits('10', decimals);
+        const amount = parseUnits('10');
 
         beforeEach('initialize oitToken addr', async () => {
           await oidToken.connect(signers.admin).approve(vestingManager.address, ethers.constants.MaxUint256);
@@ -262,8 +248,8 @@ describe('Unit tests', () => {
           await vestingAdmin.deposit(signers.user.address, amount, 0);
 
           const result = await vestingManager.connect(signers.user).getUserBalance(signers.user.address);
-          expect(result.totalLocked).to.equal(ethers.utils.parseUnits('10', decimals));
-          return expect(result.availableBalance).to.equal(ethers.utils.parseUnits('0', decimals));
+          expect(result.totalLocked).to.equal(parseUnits('10'));
+          return expect(result.availableBalance).to.equal(parseUnits('0'));
         });
         it('should return (10,0) if vesting has not started yet', async () => {
           const vestingAdmin = vestingManager.connect(signers.admin);
@@ -274,8 +260,8 @@ describe('Unit tests', () => {
           await vestingAdmin.deposit(signers.user.address, amount, 0);
 
           const result = await vestingManager.connect(signers.user).getUserBalance(signers.user.address);
-          expect(result.totalLocked).to.equal(ethers.utils.parseUnits('10', decimals));
-          return expect(result.availableBalance).to.equal(ethers.utils.parseUnits('0', decimals));
+          expect(result.totalLocked).to.equal(parseUnits('10'));
+          return expect(result.availableBalance).to.equal(parseUnits('0'));
         });
         it('should return (0,0) if user has no holdings', async () => {
           const userAddr = signers.user.address;
@@ -304,17 +290,15 @@ describe('Unit tests', () => {
 
           const vestingUser = vestingManager.connect(signers.user);
           let userBalance = await vestingUser.getUserBalance(signers.user.address);
-          expect(userBalance.totalLocked).to.be.equal(ethers.utils.parseUnits('14', decimals));
-          expect(userBalance.availableBalance).to.be.equal(ethers.utils.parseUnits('6', decimals));
+          expect(userBalance.totalLocked).to.be.equal(parseUnits('14'));
+          expect(userBalance.availableBalance).to.be.equal(parseUnits('6'));
 
           // Should be able to claim part of the tokens
-          await expect(vestingUser.claim(signers.user.address))
-            .to.emit(vestingManager, 'Withdraw')
-            .withArgs(signers.user.address, ethers.utils.parseUnits('6', decimals));
+          await expect(vestingUser.claim(signers.user.address)).to.emit(vestingManager, 'Withdraw').withArgs(signers.user.address, parseUnits('6'));
 
           userBalance = await vestingUser.getUserBalance(signers.user.address);
-          expect(userBalance.totalLocked).to.be.equal(ethers.utils.parseUnits('14', decimals));
-          return expect(userBalance.availableBalance).to.be.equal(ethers.utils.parseUnits('0', decimals));
+          expect(userBalance.totalLocked).to.be.equal(parseUnits('14'));
+          return expect(userBalance.availableBalance).to.be.equal(parseUnits('0'));
         });
       });
     });
