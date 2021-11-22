@@ -6,6 +6,24 @@ on:
       - staging
       - production
 jobs:
+  build:
+    name: build application
+    runs-on: ubuntu-latest
+    container: node:14
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        node-version: [ 14.x ]
+    steps:
+      - name: Set Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+
   lint:
     name: Lint sources
     runs-on: ubuntu-latest
