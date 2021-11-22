@@ -4,10 +4,15 @@ coverageEnv
 coverage.json
 build
 bin
+types
+cache
+artifacts
+.env
 
 # IDEs
 .idea/
 .vscode/
+.DS_Store
 
 # NPM
 gas-report
